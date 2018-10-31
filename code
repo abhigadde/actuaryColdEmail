@@ -1,0 +1,133 @@
+#This currently looks up certain fields for you and enters them into the website. 
+#Next would be to automate this to run through all 4 designations I want. Do that at end. Also make cleaner later.
+import requests
+import time
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+from bs4 import BeautifulSoup
+import re
+import pandas as pd
+from tabulate import tabulate
+import os
+import math
+import regex as re 
+
+noEmail=0
+dfEmail = []
+driver = webdriver.Chrome('C:/Users/nikhi/chromedriver')
+driver.get("https://profile.actuarialdirectory.org/Default.aspx?TabID=1754")
+#assert "Python" in driver.title
+
+#gets location set to what you would like
+city = driver.find_element_by_id('dnn_ctr3472_DirectorySearch_txtCity')
+city.clear()
+city.send_keys("Atlanta")
+
+#now need to select whichever designation I would like
+designation = driver.find_element_by_id('dnn_ctr3472_DirectorySearch_lsbProfessionalDesignations')
+designation.send_keys("CAS:FCAS")
+
+#clicks enter key for you
+enter = driver.find_element_by_id('dnn_ctr3472_DirectorySearch_btnSearch')
+enter.send_keys(Keys.RETURN)
+driver.implicitly_wait(10)
+
+
+#seem to be having trouble using selenium for this task alone. Try using beautiful soup now.
+
+#Selenium hands the page source to Beautiful Soup
+
+#GET THAT NUMBER OF ACTUARIES
+number = driver.find_element_by_xpath('//*[@id="dnn_ctr3472_DirectorySearch_lblResultsCount"]')
+numbers = number.text
+numberOfActuaries = int(re.search(r'\d+', numbers).group())
+numberOfPages = math.ceil(numberOfActuaries/20)
+
+#put exception in. If 1 page only delete last row
+if numberOfPages == 1:
+    deleting = 1
+else:
+    deleting = 2
+
+#start by getting the first part of the table
+soup_level1=BeautifulSoup(driver.page_source, 'lxml')
+table = soup_level1.find('table', id="dnn_ctr3472_DirectorySearch_dgSearchResult")
+df1 = pd.read_html(str(table),header=0)
+df = pd.concat(df1)
+df.drop(df.tail(deleting).index,inplace=True)
+
+#this is an exception line if only 1 page. Cause the code below doesn't run if only 1 page
+if numberOfPages == 1:
+    for emailNumber in range (0,numberOfActuaries):
+        #now the goal is to get the email addresses and form a column array of that to attach to all the data we got previously    
+        
+        emailName = driver.find_element_by_xpath('//*[@id="dnn_ctr3472_DirectorySearch_dgSearchResult_lbtnName_%d"]'%(emailNumber))
+        emailName.click()
+        
+        try: #in case someone doesn't have an email
+            email = driver.find_element_by_xpath('//*[@id="dnn_ctr3540_MemberDetail_hlnkPrimaryEmail"]')
+            dfEmail.append(email.text)
+        except:
+            noEmail = noEmail + 1
+            dfEmail.append('NO EMAIL')
+        backButton = driver.find_element_by_xpath('//*[@id="dnn_ctr3540_MemberDetail_hlnkBack"]')
+        backButton.click()
+        
+        
+
+#this snippet of code works great to get all emails + other info on people if 2+ pages
+for pageNumber in range(1,numberOfPages):
+
+    for emailNumber in range (0,20):
+        #now the goal is to get the email addresses and form a column array of that to attach to all the data we got previously    
+        
+        emailName = driver.find_element_by_xpath('//*[@id="dnn_ctr3472_DirectorySearch_dgSearchResult_lbtnName_%d"]'%(emailNumber))
+        emailName.click()
+        
+        try: #in case someone doesn't have an email
+            email = driver.find_element_by_xpath('//*[@id="dnn_ctr3540_MemberDetail_hlnkPrimaryEmail"]')
+            dfEmail.append(email.text)
+        except:
+            noEmail = noEmail + 1
+            dfEmail.append('NO EMAIL')
+        backButton = driver.find_element_by_xpath('//*[@id="dnn_ctr3540_MemberDetail_hlnkBack"]')
+        backButton.click()
+    
+    actualPageNumber = pageNumber
+    if pageNumber>10:
+        actualPageNumber = pageNumber-1
+    
+
+    page = driver.find_element_by_xpath('//*[@id="dnn_ctr3472_DirectorySearch_dgSearchResult"]/tbody/tr[23]/td/a[%d]'%(actualPageNumber))
+    page.click()
+
+    driver.refresh()
+    soup_level1=BeautifulSoup(driver.page_source, 'lxml')
+    table = soup_level1.find('table', id="dnn_ctr3472_DirectorySearch_dgSearchResult")
+
+    df1 = pd.read_html(str(table),header=0)
+    df2 = pd.concat(df1)
+    df2.drop(df2.tail(2).index,inplace=True) # drop last 2 rows
+    df = df.append(df2)
+    
+    #now if on last page get more emails here
+    if pageNumber == numberOfPages-1:
+        numberOfEmails = 20 - (numberOfPages*20-numberOfActuaries)
+        for emailNumber in range (0,numberOfEmails):
+        #now the goal is to get the email addresses and form a column array of that to attach to all the data we got previously    
+        
+            emailName = driver.find_element_by_xpath('//*[@id="dnn_ctr3472_DirectorySearch_dgSearchResult_lbtnName_%d"]'%(emailNumber))
+            emailName.click()
+        
+            try: #in case someone doesn't have an email
+                email = driver.find_element_by_xpath('//*[@id="dnn_ctr3540_MemberDetail_hlnkPrimaryEmail"]')
+                dfEmail.append(email.text)
+            except:
+                noEmail = noEmail + 1
+                dfEmail.append('NO EMAIL')
+            backButton = driver.find_element_by_xpath('//*[@id="dnn_ctr3540_MemberDetail_hlnkBack"]')
+            backButton.click()
+
+driver.close()
+df['Email'] = dfEmail
+#df.reset_index(inplace=True, drop=True) #resets the index so it doesn't count up all wierd like
